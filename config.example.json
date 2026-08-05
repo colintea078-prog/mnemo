@@ -1,0 +1,14 @@
+{
+  "db_path": "./mnemo.db",
+  "host": "127.0.0.1",
+  "port": 3456,
+  "token": "",
+
+  "layers": ["core", "daily", "memo", "diary", "note"],
+  "default_layer": "daily",
+
+  "hot_limits": { "core": 2 },
+
+  "read_limit": 20,
+  "search_limit": 10
+}
