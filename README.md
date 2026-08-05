@@ -10,6 +10,9 @@ This is not a research prototype. It is the cleaned-up, de-identified core of a 
 assistant that has been running continuously since May 2026 — the design decisions below all
 came from things that broke in production.
 
+**[Interactive demo →](https://colintea078-prog.github.io/mnemo/)** — write entries, watch the
+oldest summary sink, and see why wake-up cost stays flat while the database grows.
+
 ---
 
 ## The problem it solves
