@@ -60,6 +60,25 @@ reverse proxy in front of it.
 
 ## How it works
 
+```mermaid
+flowchart LR
+    W(["wakeup"]) --> C
+    Q(["search_memory"]) --> D
+
+    C["core — always-on<br/>loaded every session"]
+    D["other layers — on-demand<br/>daily · memo · diary · note"]
+
+    C -- "hot limit exceeded" --> S["demoted<br/>active_flag = 0"]
+    S -- "still searchable" --> D
+
+    style C fill:#e8f0fe,stroke:#4a6fa5,stroke-width:1.5px
+    style D fill:#f4f5f7,stroke:#9aa3ad
+    style S fill:#fdf1de,stroke:#b0762b,stroke-width:1.5px
+```
+
+Two read paths and one valve between them. In the deployment this was extracted from, `core`
+holds 17 of 221 entries after three months — 7%, and it does not grow.
+
 ### Layers
 
 Every entry belongs to exactly one layer. Layers are configured, not hard-coded:
