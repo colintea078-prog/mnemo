@@ -65,10 +65,10 @@ flowchart LR
     W(["wakeup"]) --> C
     Q(["search_memory"]) --> D
 
-    C["core — always-on<br/>loaded every session"]
-    D["other layers — on-demand<br/>daily · memo · diary · note"]
+    C["core — always-on · 11 entries"]
+    D["other layers — on-demand"]
 
-    C -- "hot limit exceeded" --> S["demoted<br/>active_flag = 0"]
+    C -- "hot limit exceeded" --> S["demoted · 6 entries"]
     S -- "still searchable" --> D
 
     style C fill:#e8f0fe,stroke:#4a6fa5,stroke-width:1.5px
@@ -77,7 +77,8 @@ flowchart LR
 ```
 
 Two read paths and one valve between them. In the deployment this was extracted from, `core`
-holds 17 of 221 entries after three months — 7%, and it does not grow.
+holds 17 entries after three months: 11 still hot, 6 already sunk. Wake-up loads 11 out of 223
+total — under 5%, and that number does not grow. The six that sank are the mechanism working.
 
 ### Layers
 
