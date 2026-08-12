@@ -63,10 +63,12 @@ reverse proxy in front of it.
 ```mermaid
 flowchart LR
     W(["wakeup"]) --> C
+    W --> R
     Q(["search_memory"]) --> D
 
     C["core — always-on · 11 entries"]
-    D["other layers — on-demand"]
+    R["N most recent diary"]
+    D["everything else — on-demand"]
 
     C -- "hot limit exceeded" --> S["demoted · 6 entries"]
     S -- "still searchable" --> D
@@ -76,9 +78,14 @@ flowchart LR
     style S fill:#fdf1de,stroke:#b0762b,stroke-width:1.5px
 ```
 
-Two read paths and one valve between them. In the deployment this was extracted from, `core`
-holds 17 entries after three months: 11 still hot, 6 already sunk. Wake-up loads 11 out of 223
-total — under 5%, and that number does not grow. The six that sank are the mechanism working.
+Two read paths and one valve between them. In the deployment this was extracted from, wake-up
+loads 11 hot `core` entries plus the 5 most recent diary entries — 16 records out of 223, about
+7%, and that count does not grow. Six older core entries have already sunk.
+
+Sixteen records carry more than sixteen records' worth. Two of the eleven are rolling summaries
+that between them compress three weeks of daily entries; as more summaries sink, the window they
+cover keeps widening while the number of records read at wake-up stays flat. That is the whole
+point of the mechanism.
 
 ### Layers
 
