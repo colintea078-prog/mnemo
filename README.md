@@ -121,9 +121,15 @@ wake-up procedure the agent will skip when it is in a hurry. One call, always th
 
 ### Search
 
-Substring `LIKE` over content and tags. At the scale this targets — thousands of entries, one
-user — it returns instantly and keeps the dependency list empty. If you outgrow it, SQLite's
-FTS5 is a drop-in replacement for `MemoryStore.search`; nothing else needs to change.
+Multi-keyword `LIKE` over content and tags. Terms are separated by spaces and **all** must match,
+so `deploy staging` finds entries that mention both. Each hit comes back with the matching
+passages (a little context on each side, ellipses where the text was cut, nearby hits merged) so
+the agent can judge relevance without loading every full entry; results are ranked by number of
+hits, newest first among ties. Pass `full=true` to get the whole entry under its passages.
+
+At the scale this targets — thousands of entries, one user — it returns instantly and keeps the
+dependency list empty. If you outgrow it, SQLite's FTS5 is a drop-in replacement for
+`MemoryStore.search`; nothing else needs to change.
 
 ---
 
@@ -134,7 +140,7 @@ FTS5 is a drop-in replacement for `MemoryStore.search`; nothing else needs to ch
 | `wakeup` | load core + recent diary in one call |
 | `write_memory` | store an entry, applying the hot limit |
 | `read_memory` | filter by layer / tag, newest first |
-| `search_memory` | substring search |
+| `search_memory` | multi-keyword search, returns the matching passages (`full=true` for whole entries) |
 | `update_memory` | edit content, tags, or hot/cold flag |
 | `delete_memory` | permanent removal |
 | `stats` | counts per layer, how many have sunk |

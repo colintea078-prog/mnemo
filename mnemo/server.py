@@ -65,11 +65,16 @@ def build_tools(cfg: Config):
         },
         {
             "name": "search_memory",
-            "description": "Substring search over content and tags.",
+            "description": (
+                "Multi-keyword search over content and tags. Terms separated "
+                "by spaces must all match. Returns ranked entries with the "
+                "matching passages; set full=true to include each whole entry."
+            ),
             "inputSchema": {
                 "type": "object",
                 "properties": {"query": {"type": "string"},
-                               "limit": {"type": "integer"}},
+                               "limit": {"type": "integer"},
+                               "full": {"type": "boolean"}},
                 "required": ["query"],
             },
         },
@@ -122,7 +127,8 @@ def make_handlers(store: MemoryStore):
         return _fmt(rows)
 
     def search_memory(a):
-        return _fmt(store.search(a["query"], a.get("limit")))
+        rows = store.search(a["query"], a.get("limit"))
+        return _fmt_search(rows, full=a.get("full", False))
 
     def update_memory(a):
         ok = store.update(a["id"], a.get("content"), a.get("tags"),
@@ -159,6 +165,24 @@ def _fmt(rows) -> str:
         out.append(f"[{r['id']}] ({r['layer']}) {r['content']} "
                    f"| tags: {r['tags']} | {r['created_at'][:10]}{flag}")
     return "\n".join(out)
+
+
+def _fmt_search(rows, full: bool = False) -> str:
+    """Search results: a header line per entry, its matching passages, and
+    optionally the whole entry underneath."""
+    if not rows:
+        return "(no matching entries)"
+    out = []
+    for r in rows:
+        flag = "" if r.get("active_flag", 1) else " [sunk]"
+        out.append(f"[{r['id']}] ({r['layer']}) {r['created_at'][:10]} "
+                   f"| tags: {r['tags']} | {r['hits']} hit(s){flag}")
+        out += [f"    {snip}" for snip in r["snippets"]]
+        if full:
+            out.append("    --- full entry ---")
+            out += [f"    {line}" for line in r["content"].splitlines()]
+        out.append("")
+    return "\n".join(out).rstrip()
 
 
 def make_request_handler(cfg: Config, tools, handlers):

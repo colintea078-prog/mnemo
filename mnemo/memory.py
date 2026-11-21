@@ -5,10 +5,91 @@ empty head. These functions are what it reads on wake-up and what it writes
 before the context window closes.
 """
 
+import re
 from typing import Any, Dict, List, Optional
 
 from .config import Config
 from .db import connect
+
+
+# --- search tuning -------------------------------------------------------
+SNIPPET_RADIUS = 46      # characters of context kept on each side of a hit
+SNIPPET_MAX_SPAN = 220   # a merged window never grows past this many characters
+SNIPPET_MAX_COUNT = 3    # snippets returned per entry
+MAX_HITS_SCANNED = 400   # safety cap for pathological one-letter queries
+
+
+def split_terms(query: str) -> List[str]:
+    """Split a query on whitespace. Every term must match (AND)."""
+    return [t for t in query.split() if t]
+
+
+def _like_escape(term: str) -> str:
+    """Make %, _ and \\ literal inside a LIKE pattern."""
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _fold(text: str) -> str:
+    """Lowercase for matching, but never change the string length.
+
+    A few Unicode characters grow when lowercased, which would shift every
+    snippet offset. If that happens, fall back to a case-sensitive match.
+    """
+    low = text.lower()
+    return low if len(low) == len(text) else text
+
+
+def count_hits(text: str, term: str) -> int:
+    low, needle = _fold(text), _fold(term)
+    count, start = 0, 0
+    while count < MAX_HITS_SCANNED:
+        i = low.find(needle, start)
+        if i == -1:
+            break
+        count += 1
+        start = i + len(needle)
+    return count
+
+
+def find_snippets(
+    text: str,
+    terms: List[str],
+    radius: int = SNIPPET_RADIUS,
+    max_span: int = SNIPPET_MAX_SPAN,
+    max_count: int = SNIPPET_MAX_COUNT,
+) -> List[str]:
+    """Return the passages around the hits, with ellipses where text was cut.
+
+    Hits that sit close together are merged into one passage so the same
+    sentence is not shown twice. A merged passage is capped at ``max_span``
+    characters; past that, a new passage starts.
+    """
+    low = _fold(text)
+    hits = []
+    for term in terms:
+        needle = _fold(term)
+        start = 0
+        while len(hits) < MAX_HITS_SCANNED:
+            i = low.find(needle, start)
+            if i == -1:
+                break
+            hits.append((i, i + len(needle)))
+            start = i + len(needle)
+    hits.sort()
+
+    windows: List[List[int]] = []
+    for h0, h1 in hits:
+        s, e = max(0, h0 - radius), min(len(text), h1 + radius)
+        if windows and s <= windows[-1][1] and (e - windows[-1][0]) <= max_span:
+            windows[-1][1] = max(windows[-1][1], e)
+        else:
+            windows.append([s, e])
+
+    out = []
+    for s, e in windows[:max_count]:
+        piece = re.sub(r"\s*\n\s*", " ", text[s:e])
+        out.append(("\u2026" if s > 0 else "") + piece + ("\u2026" if e < len(text) else ""))
+    return out
 
 
 class MemoryStore:
@@ -106,22 +187,65 @@ class MemoryStore:
         conn.close()
         return [dict(r) for r in rows]
 
-    def search(self, query: str, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """Substring search across content and tags.
+    def search(
+        self,
+        query: str,
+        limit: Optional[int] = None,
+        include_inactive: bool = True,
+    ) -> List[Dict[str, Any]]:
+        """Multi-keyword search across content and tags.
 
-        LIKE is intentional: at the scale this runs at (thousands of entries,
-        single user) it is instant, and it keeps the dependency list empty.
-        Swap in FTS5 if you outgrow it — see docs/design.md.
+        Terms are separated by whitespace and ALL must appear (AND), in the
+        content or in the tags. Each result carries ``hits`` (total matches)
+        and ``snippets`` (the matching passages), and results are ranked by
+        hits, newest first among ties.
+
+        LIKE is still the engine: at the scale this runs at (thousands of
+        entries, single user) it is instant and the dependency list stays
+        empty. Swap in FTS5 if you outgrow it — see docs/design.md.
+
+        Demoted entries stay searchable by default; pass
+        ``include_inactive=False`` to hide them.
         """
+        terms = split_terms(query)
+        if not terms:
+            return []
+
+        clauses, params = [], []
+        for term in terms:
+            clauses.append("(content LIKE ? ESCAPE '\\' OR tags LIKE ? ESCAPE '\\')")
+            pattern = f"%{_like_escape(term)}%"
+            params += [pattern, pattern]
+        where = " AND ".join(clauses)
+        if not include_inactive:
+            where += " AND active_flag = 1"
+
         conn = connect(self.cfg.db_path)
         rows = conn.execute(
-            "SELECT id, content, layer, tags, created_at FROM memories "
-            "WHERE content LIKE ? OR tags LIKE ? "
-            "ORDER BY created_at DESC, id DESC LIMIT ?",
-            (f"%{query}%", f"%{query}%", limit or self.cfg.search_limit),
+            "SELECT id, content, layer, tags, created_at, active_flag "
+            f"FROM memories WHERE {where} "
+            "ORDER BY created_at DESC, id DESC",
+            params,
         ).fetchall()
         conn.close()
-        return [dict(r) for r in rows]
+
+        results = []
+        for r in rows:
+            row = dict(r)
+            haystack = row["content"] + "\n" + row["tags"]
+            counts = [count_hits(haystack, t) for t in terms]
+            if not all(counts):          # SQL LIKE is only ASCII-case-insensitive
+                continue
+            row["hits"] = sum(counts)
+            row["snippets"] = (
+                find_snippets(row["content"], terms)
+                or [row["content"][: SNIPPET_RADIUS * 2]]   # tag-only match
+            )
+            results.append(row)
+
+        # sorted() is stable, so the newest-first order survives as the tie-break
+        results = sorted(results, key=lambda r: -r["hits"])
+        return results[: (limit or self.cfg.search_limit)]
 
     def get(self, memory_id: int) -> Optional[Dict[str, Any]]:
         conn = connect(self.cfg.db_path)
