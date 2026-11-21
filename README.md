@@ -184,6 +184,9 @@ Fix: treat immutable-cached files as immutable — write a new filename and upda
 Longer discussion of the trade-offs — why layers instead of pure vector retrieval, why demote
 instead of delete, why a feature was cut after testing — is in [docs/design.md](docs/design.md).
 
+The operating manual — what goes in each layer, how tags and rolling summaries work, how to
+connect an agent — is in [docs/memory-model.md](docs/memory-model.md).
+
 ## License
 
 MIT
